@@ -56,7 +56,7 @@ When generating the planet, each vertex point on the terrain is mapped onto a qu
 
 #### SgteTerrainHeightStampRandom
 
-Like `SgteTerrainHeightStampGrid`, but the heightstamps are randomly distributed instead of restricted to a grid, will be useful to generate terrain-features like crates. The density is controlled by `SgtTerrainArea`
+Like `SgteTerrainHeightStampGrid`, but the heightstamps are randomly distributed instead of restricted to a grid, will be useful to generate terrain-features like craters. The density is controlled by `SgtTerrainArea`
 
 #### SgteECSTerrainPrefabSpawner
 
