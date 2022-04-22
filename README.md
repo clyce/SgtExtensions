@@ -31,16 +31,16 @@ When generating the planet, each vertex point on the terrain is mapped onto a qu
 #### Demonstration:
 
 - Trustable near terrain from heightmap presets:
-![Images/SgteTerrainHeightStampGrid/Trustable_Detailed_Terrain.png]
+![Demo](Images/SgteTerrainHeightStampGrid/Trustable_Detailed_Terrain.png)
 
 - Without grid blending (for demonstrating the grids):
-![Images/SgteTerrainHeightStampGrid/UnBlended.png]
+![Grids](Images/SgteTerrainHeightStampGrid/UnBlended.png)
 
 - With grid blending:
-![Images/SgteTerrainHeightStampGrid/Blended.png]
+![Blended Grids](Images/SgteTerrainHeightStampGrid/Blended.png)
 
 - Working with `SgtTerrainHeightmap` to introduce global height and reduces potential repetitiveness:
-![Images/SgteTerrainHeightStampGrid/With_SgtTerrainHeightMap.png]
+![With SgtTerrainHeightmap](Images/SgteTerrainHeightStampGrid/With_SgtTerrainHeightMap.png)
 
 
 ## TODOs
