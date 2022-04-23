@@ -21,8 +21,8 @@ When generating the planet, each vertex point on the terrain is mapped onto a qu
 - Seed: the seed for pseudo-random assignment of height stamp of each grid
 - Displacement: global displacement control
 - HeightOrigin: the global "origin point" of the height value, for example, `HeightOrigin = 0.5f` makes the black region to alter the height with `-0.5f * Displacement`
-- TilesPerDim: Number of grids along each x,y dimension on each quad of the unit cube.
-- TileSpan: when the localUV is normalized to $[0,1]$, for each grid, how much does each grid overlaps and blends with it's neighbours.
+- GridsPerDim: Number of grids along each x,y dimension on each quad of the unit cube.
+- GridSpan: when the localUV is normalized to $[0,1]$, for each grid, how much does each grid overlaps and blends with it's neighbours.
 - HeightStamps: An array of heightmaps and their corresponding configurations:
 	- StampMap: the height map for the stamp
 	- LocalHeightOrigin: the local height origin of this specific stamp, being added to the global `HeightOrigin`. With range $[0, 1]$
