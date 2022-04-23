@@ -17,10 +17,10 @@ namespace SgtExtensions {
     public class SgteTerrainHeightStampGrid : MonoBehaviour {
         public uint Seed { set { if (seed != value) { seed = value; MarkAsDirty(); } } get { return seed; } }
         [SerializeField] private uint seed;
-        public int TilesPerDim { set { if (tilesPerDim != value) { tilesPerDim = value; MarkAsDirty(); } } get { return tilesPerDim; } }
-        [SerializeField] private int tilesPerDim = 1;
-        public float TileSpan { set { if (tileSpan != value) { tileSpan = value; MarkAsDirty(); } } get { return tileSpan; } }
-        [SerializeField] private float tileSpan = 0.125f;
+        public int GridsPerDim { set { if (gridsPerDim != value) { gridsPerDim = value; MarkAsDirty(); } } get { return gridsPerDim; } }
+        [SerializeField] private int gridsPerDim = 1;
+        public float GridSpan { set { if (gridSpan != value) { gridSpan = value; MarkAsDirty(); } } get { return gridSpan; } }
+        [SerializeField] private float gridSpan = 0.125f;
         public int Area { set { area = value; MarkAsDirty(); } get { return area; } }
         [SerializeField] private int area = -1;
         public double Displacement { set { if (displacement != value) { displacement = value; MarkAsDirty(); } } get { return displacement; } }
@@ -41,22 +41,22 @@ namespace SgtExtensions {
         private SgtTerrain cachedTerrain;
         private NativeArray<byte> cachedHeightStampData = new NativeArray<byte>();
         private NativeArray<float> tempWeights;
-        private NativeArray<int> tileMappings = new NativeArray<int>();
-        private NativeArray<bool3> tileFlipAndTranspose = new NativeArray<bool3>();
+        private NativeArray<int> gridMappings = new NativeArray<int>();
+        private NativeArray<bool3> gridFlipAndTranspose = new NativeArray<bool3>();
         private NativeArray<double> localHeightOrigins = new NativeArray<double>();
         private NativeArray<double> localDisplacements = new NativeArray<double>();
         private int stampCount => heightStamps.Length;
         public void MarkAsDirty() {
             if (heightStamps.Length > 0) {
-                try { tileMappings.Dispose(); } catch { };
-                try { tileFlipAndTranspose.Dispose(); } catch { }
-                int totalTiles = TilesPerDim * TilesPerDim * 6;
-                tileMappings = new NativeArray<int>(totalTiles, Allocator.Persistent);
-                tileFlipAndTranspose = new NativeArray<bool3>(totalTiles, Allocator.Persistent);
+                try { gridMappings.Dispose(); } catch { };
+                try { gridFlipAndTranspose.Dispose(); } catch { }
+                int totalGrids = GridsPerDim * GridsPerDim * 6;
+                gridMappings = new NativeArray<int>(totalGrids, Allocator.Persistent);
+                gridFlipAndTranspose = new NativeArray<bool3>(totalGrids, Allocator.Persistent);
                 var rand = Unity.Mathematics.Random.CreateFromIndex(Seed);
-                for (int i = 0; i < tileMappings.Length; i++) {
-                    tileMappings[i] = rand.NextInt(0, heightStamps.Length);
-                    tileFlipAndTranspose[i] = rand.NextBool3();
+                for (int i = 0; i < gridMappings.Length; i++) {
+                    gridMappings[i] = rand.NextInt(0, heightStamps.Length);
+                    gridFlipAndTranspose[i] = rand.NextBool3();
                 }
             }
             if (cachedTerrain != null) {
@@ -96,10 +96,10 @@ namespace SgtExtensions {
 
             cachedTerrain.ScheduleDispose(cachedHeightStampData);
             cachedTerrain.ScheduleDispose(tempWeights);
-            cachedTerrain.ScheduleDispose(tileMappings);
+            cachedTerrain.ScheduleDispose(gridMappings);
             cachedTerrain.ScheduleDispose(localDisplacements);
             cachedTerrain.ScheduleDispose(localHeightOrigins);
-            cachedTerrain.ScheduleDispose(tileFlipAndTranspose);
+            cachedTerrain.ScheduleDispose(gridFlipAndTranspose);
             cachedTerrain.MarkAsDirty();
         }
 
@@ -148,11 +148,11 @@ namespace SgtExtensions {
             job.StampSize = new int2(sampleTex.width, sampleTex.height);
             job.StampStride = SgtCommon.GetStride(sampleTex.format);
             job.StampOffset = SgtCommon.GetOffset(sampleTex.format, 0);
-            job.TilesPerDim = TilesPerDim;
-            job.TilesPerQuad = TilesPerDim * TilesPerDim;
-            job.TileSpan = TileSpan;
-            job.TileMapping = tileMappings;
-            job.TileFlipAndTranspose = tileFlipAndTranspose;
+            job.GridsPerDim = GridsPerDim;
+            job.GridsPerQuad = GridsPerDim * GridsPerDim;
+            job.GridSpan = GridSpan;
+            job.GridMapping = gridMappings;
+            job.GridFlipAndTranspose = gridFlipAndTranspose;
             job.StampCount = stampCount;
             job.StampBSize = cachedHeightStampData.Length / stampCount;
             job.LocalDisplacements = localDisplacements;
@@ -181,18 +181,18 @@ namespace SgtExtensions {
             public uint Seed;
             [ReadOnly] public NativeArray<double3> Points;
             [ReadOnly] public NativeArray<byte> HeightArray;
-            [ReadOnly] public NativeArray<int> TileMapping;
-            [ReadOnly] public NativeArray<bool3> TileFlipAndTranspose;
+            [ReadOnly] public NativeArray<int> GridMapping;
+            [ReadOnly] public NativeArray<bool3> GridFlipAndTranspose;
             [ReadOnly] public NativeArray<double> LocalHeightOrigins;
             [ReadOnly] public NativeArray<double> LocalDisplacements;
             public double Displacement, HeightOrigin;
             public int2 StampSize;
             public int StampStride, StampOffset;
-            public int TilesPerDim;
-            public float TileSpan;
+            public int GridsPerDim;
+            public float GridSpan;
             public int StampCount;
             public int StampBSize;
-            public int TilesPerQuad;
+            public int GridsPerQuad;
 
             [ReadOnly] public int Area;
             [ReadOnly] public int2 AreaSize;
@@ -201,20 +201,20 @@ namespace SgtExtensions {
 
             public NativeArray<double> Heights;
             [BurstCompile]
-            public int TileIdOf(int quadId, int x, int y) {
+            public int GridIdOf(int quadId, int x, int y) {
                 return CoordUtils.IntPosToIndex(
-                    x >= 0 ? x : TilesPerDim + x,
-                    y >= 0 ? y : TilesPerDim + y,
-                    TilesPerDim) + (quadId * TilesPerQuad);
+                    x >= 0 ? x : GridsPerDim + x,
+                    y >= 0 ? y : GridsPerDim + y,
+                    GridsPerDim) + (quadId * GridsPerQuad);
             }
 
             [BurstCompile]
-            public double GetSubHeight(double alpha, (int, int, int, double2) tileIdAnduv) {
-                int tileId = TileIdOf(tileIdAnduv.Item1, tileIdAnduv.Item2, tileIdAnduv.Item3);
-                double2 uv = tileIdAnduv.Item4;
-                //tileId = tileId - (tileId / TileMapping.Length) * TileMapping.Length; // Just in case...
-                int stampId = TileMapping[tileId];
-                var flipAndTranspose = TileFlipAndTranspose[tileId];
+            public double GetSubHeight(double alpha, (int, int, int, double2) gridIdAnduv) {
+                int gridId = GridIdOf(gridIdAnduv.Item1, gridIdAnduv.Item2, gridIdAnduv.Item3);
+                double2 uv = gridIdAnduv.Item4;
+                //gridId = gridId - (gridId / GridMapping.Length) * GridMapping.Length; // Just in case...
+                int stampId = GridMapping[gridId];
+                var flipAndTranspose = GridFlipAndTranspose[gridId];
                 if (flipAndTranspose.x) uv.x = 1 - uv.x;
                 if (flipAndTranspose.y) uv.y = 1 - uv.y;
                 if (flipAndTranspose.z) uv = uv.yx;
@@ -237,54 +237,54 @@ namespace SgtExtensions {
                     |_______|
             */
 
-            // return: quadIdx, localTileY, localTileY, localUV
+            // return: quadIdx, localGridY, localGridY, localUV
             [BurstCompile]
-            public (int, int, int, double2) LeftNeighbourTileIdAndUV(int quadIdx, int2 localTile, double2 localUV) {
-                var defaultUV = new double2(localUV.x + 1 - TileSpan, localUV.y);
+            public (int, int, int, double2) LeftNeighbourGridIdAndUV(int quadIdx, int2 localGrid, double2 localUV) {
+                var defaultUV = new double2(localUV.x + 1 - GridSpan, localUV.y);
                 switch (quadIdx) {
                     case 0:
-                        return localTile.x > 0
+                        return localGrid.x > 0
                             ? (
-                                0, localTile.x - 1, localTile.y, defaultUV
+                                0, localGrid.x - 1, localGrid.y, defaultUV
                             ) : (
-                                3, -1, localTile.y, defaultUV
+                                3, -1, localGrid.y, defaultUV
                             );
                     case 1:
-                        return localTile.x > 0
+                        return localGrid.x > 0
                             ? (
-                                1, localTile.x - 1, localTile.y, defaultUV
+                                1, localGrid.x - 1, localGrid.y, defaultUV
                             ) : (
-                                0, -1, localTile.y, defaultUV
+                                0, -1, localGrid.y, defaultUV
                             );
                     case 2:
-                        return localTile.x > 0
+                        return localGrid.x > 0
                             ? (
-                                2, localTile.x - 1, localTile.y, defaultUV
+                                2, localGrid.x - 1, localGrid.y, defaultUV
                             ) : (
-                                1, -1, localTile.y, defaultUV
+                                1, -1, localGrid.y, defaultUV
                             );
                     case 3:
-                        return localTile.x > 0
+                        return localGrid.x > 0
                             ? (
-                                3, localTile.x - 1, localTile.y, defaultUV
+                                3, localGrid.x - 1, localGrid.y, defaultUV
                             ) : (
-                                2, -1, localTile.y, defaultUV
+                                2, -1, localGrid.y, defaultUV
                             );
                     case 4:
-                        return localTile.x > 0
+                        return localGrid.x > 0
                             ? (
-                                4, localTile.x - 1, localTile.y, defaultUV
+                                4, localGrid.x - 1, localGrid.y, defaultUV
                             ) : (
-                                0, -1 - localTile.y, -1,
-                                new double2(1 - localUV.y, 1 - TileSpan + localUV.x)
+                                0, -1 - localGrid.y, -1,
+                                new double2(1 - localUV.y, 1 - GridSpan + localUV.x)
                             );
                     case 5:
-                        return localTile.x > 0
+                        return localGrid.x > 0
                             ? (
-                                5, localTile.x - 1, localTile.y, defaultUV
+                                5, localGrid.x - 1, localGrid.y, defaultUV
                             ) : (
-                                0, localTile.y, 0,
-                                new double2(localUV.y, TileSpan - localUV.x)
+                                0, localGrid.y, 0,
+                                new double2(localUV.y, GridSpan - localUV.x)
                             );
                     default:
                         return (0, 0, 0, double2.zero);
@@ -292,52 +292,52 @@ namespace SgtExtensions {
             }
 
             [BurstCompile]
-            public (int, int, int, double2) RightNeighbourTileIdAndUV(int quadIdx, int2 localTile, double2 localUV) {
-                var defaultUV = new double2(localUV.x - 1 + TileSpan, localUV.y);
+            public (int, int, int, double2) RightNeighbourGridIdAndUV(int quadIdx, int2 localGrid, double2 localUV) {
+                var defaultUV = new double2(localUV.x - 1 + GridSpan, localUV.y);
                 switch (quadIdx) {
                     case 0:
-                        return localTile.x < TilesPerDim - 1
+                        return localGrid.x < GridsPerDim - 1
                             ? (
-                                0, localTile.x + 1, localTile.y, defaultUV
+                                0, localGrid.x + 1, localGrid.y, defaultUV
                             ) : (
-                                1, 0, localTile.y, defaultUV
+                                1, 0, localGrid.y, defaultUV
                             );
                     case 1:
-                        return localTile.x < TilesPerDim - 1
+                        return localGrid.x < GridsPerDim - 1
                             ? (
-                                1, localTile.x + 1, localTile.y, defaultUV
+                                1, localGrid.x + 1, localGrid.y, defaultUV
                             ) : (
-                                2, 0, localTile.y, defaultUV
+                                2, 0, localGrid.y, defaultUV
                             );
                     case 2:
-                        return localTile.x < TilesPerDim - 1
+                        return localGrid.x < GridsPerDim - 1
                             ? (
-                                2, localTile.x + 1, localTile.y, defaultUV
+                                2, localGrid.x + 1, localGrid.y, defaultUV
                             ) : (
-                                3, 0, localTile.y, defaultUV
+                                3, 0, localGrid.y, defaultUV
                             );
                     case 3:
-                        return localTile.x < TilesPerDim - 1
+                        return localGrid.x < GridsPerDim - 1
                             ? (
-                                3, localTile.x + 1, localTile.y, defaultUV
+                                3, localGrid.x + 1, localGrid.y, defaultUV
                             ) : (
-                                0, 0, localTile.y, defaultUV
+                                0, 0, localGrid.y, defaultUV
                             );
                     case 4:
-                        return localTile.x < TilesPerDim - 1
+                        return localGrid.x < GridsPerDim - 1
                             ? (
-                                4, localTile.x + 1, localTile.y, defaultUV
+                                4, localGrid.x + 1, localGrid.y, defaultUV
                             ) : (
-                                2, localTile.y, -1,
-                                new double2(localUV.y, 2 - TileSpan - localUV.x)
+                                2, localGrid.y, -1,
+                                new double2(localUV.y, 2 - GridSpan - localUV.x)
                             );
                     case 5:
-                        return localTile.x < TilesPerDim - 1
+                        return localGrid.x < GridsPerDim - 1
                             ? (
-                                5, localTile.x + 1, localTile.y, defaultUV
+                                5, localGrid.x + 1, localGrid.y, defaultUV
                             ) : (
-                                2, -1 - localTile.y, 0,
-                                new double2(1 - localUV.y, localUV.x - 1 + TileSpan)
+                                2, -1 - localGrid.y, 0,
+                                new double2(1 - localUV.y, localUV.x - 1 + GridSpan)
                             );
                     default:
                         return (0, 0, 0, double2.zero);
@@ -345,54 +345,54 @@ namespace SgtExtensions {
             }
 
             [BurstCompile]
-            public (int, int, int, double2) UpNeighbourTileIdAndUV(int quadIdx, int2 localTile, double2 localUV) {
-                var defaultUV = new double2(localUV.x, localUV.y - 1 + TileSpan);
+            public (int, int, int, double2) UpNeighbourGridIdAndUV(int quadIdx, int2 localGrid, double2 localUV) {
+                var defaultUV = new double2(localUV.x, localUV.y - 1 + GridSpan);
                 switch (quadIdx) {
                     case 0:
-                        return localTile.y < TilesPerDim - 1
+                        return localGrid.y < GridsPerDim - 1
                             ? (
-                                0, localTile.x, localTile.y + 1, defaultUV
+                                0, localGrid.x, localGrid.y + 1, defaultUV
                             ) : (
-                                4, 0, -1 - localTile.x,
-                                new double2(TileSpan - 1 + localUV.y, 1 - localUV.x)
+                                4, 0, -1 - localGrid.x,
+                                new double2(GridSpan - 1 + localUV.y, 1 - localUV.x)
                             );
                     case 1:
-                        return localTile.y < TilesPerDim - 1
+                        return localGrid.y < GridsPerDim - 1
                             ? (
-                                1, localTile.x, localTile.y + 1, defaultUV
+                                1, localGrid.x, localGrid.y + 1, defaultUV
                             ) : (
-                                4, localTile.x, 0, defaultUV
+                                4, localGrid.x, 0, defaultUV
                             );
                     case 2:
-                        return localTile.y < TilesPerDim - 1
+                        return localGrid.y < GridsPerDim - 1
                             ? (
-                                2, localTile.x, localTile.y + 1, defaultUV
+                                2, localGrid.x, localGrid.y + 1, defaultUV
                             ) : (
-                                4, -1, localTile.x,
-                                new double2(2 - localUV.y - TileSpan, localUV.x)
+                                4, -1, localGrid.x,
+                                new double2(2 - localUV.y - GridSpan, localUV.x)
                             );
                     case 3:
-                        return localTile.y < TilesPerDim - 1
+                        return localGrid.y < GridsPerDim - 1
                             ? (
-                                3, localTile.x, localTile.y + 1, defaultUV
+                                3, localGrid.x, localGrid.y + 1, defaultUV
                             ) : (
-                                4, -1 - localTile.x, -1,
-                                new double2(1 - localUV.x, 2 - TileSpan - localUV.y)
+                                4, -1 - localGrid.x, -1,
+                                new double2(1 - localUV.x, 2 - GridSpan - localUV.y)
                             );
                     case 4:
-                        return localTile.y < TilesPerDim - 1
+                        return localGrid.y < GridsPerDim - 1
                             ? (
-                                4, localTile.x, localTile.y + 1, defaultUV
+                                4, localGrid.x, localGrid.y + 1, defaultUV
                             ) : (
-                                3, -1 - localTile.x, -1,
-                                new double2(1 - localUV.x, 2 - TileSpan - localUV.y)
+                                3, -1 - localGrid.x, -1,
+                                new double2(1 - localUV.x, 2 - GridSpan - localUV.y)
                             );
                     case 5:
-                        return localTile.y < TilesPerDim - 1
+                        return localGrid.y < GridsPerDim - 1
                             ? (
-                                5, localTile.x, localTile.y + 1, defaultUV
+                                5, localGrid.x, localGrid.y + 1, defaultUV
                             ) : (
-                                1, localTile.x, 0, defaultUV
+                                1, localGrid.x, 0, defaultUV
                             );
                     default:
                         return (0, 0, 0, double2.zero);
@@ -400,54 +400,54 @@ namespace SgtExtensions {
             }
 
             [BurstCompile]
-            public (int, int, int, double2) DownNeighbourTileIdAndUV(int quadIdx, int2 localTile, double2 localUV) {
-                var defaultUV = new double2(localUV.x, localUV.y + 1 - TileSpan);
+            public (int, int, int, double2) DownNeighbourGridIdAndUV(int quadIdx, int2 localGrid, double2 localUV) {
+                var defaultUV = new double2(localUV.x, localUV.y + 1 - GridSpan);
                 switch (quadIdx) {
                     case 0:
-                        return localTile.y > 0
+                        return localGrid.y > 0
                             ? (
-                                0, localTile.x, localTile.y - 1, defaultUV
+                                0, localGrid.x, localGrid.y - 1, defaultUV
                             ) : (
-                                5, 0, localTile.x,
-                                new double2(TileSpan - localUV.y, localUV.x)
+                                5, 0, localGrid.x,
+                                new double2(GridSpan - localUV.y, localUV.x)
                             );
                     case 1:
-                        return localTile.y > 0
+                        return localGrid.y > 0
                             ? (
-                                1, localTile.x, localTile.y - 1, defaultUV
+                                1, localGrid.x, localGrid.y - 1, defaultUV
                             ) : (
-                                5, localTile.x, -1, defaultUV
+                                5, localGrid.x, -1, defaultUV
                             );
                     case 2:
-                        return localTile.y > 0
+                        return localGrid.y > 0
                             ? (
-                                2, localTile.x, localTile.y - 1, defaultUV
+                                2, localGrid.x, localGrid.y - 1, defaultUV
                             ) : (
-                                5, -1, -1 - localTile.x,
-                                new double2(1 - TileSpan + localUV.y, 1 - localUV.x)
+                                5, -1, -1 - localGrid.x,
+                                new double2(1 - GridSpan + localUV.y, 1 - localUV.x)
                             );
                     case 3:
-                        return localTile.y > 0
+                        return localGrid.y > 0
                             ? (
-                                3, localTile.x, localTile.y - 1, defaultUV
+                                3, localGrid.x, localGrid.y - 1, defaultUV
                             ) : (
-                                5, -1 - localTile.x, 0,
-                                new double2(1 - localUV.x, TileSpan - localUV.y)
+                                5, -1 - localGrid.x, 0,
+                                new double2(1 - localUV.x, GridSpan - localUV.y)
                             );
                     case 4:
-                        return localTile.y > 0
+                        return localGrid.y > 0
                             ? (
-                                4, localTile.x, localTile.y - 1, defaultUV
+                                4, localGrid.x, localGrid.y - 1, defaultUV
                             ) : (
-                                1, localTile.x, -1, defaultUV
+                                1, localGrid.x, -1, defaultUV
                             );
                     case 5:
-                        return localTile.y > 0
+                        return localGrid.y > 0
                             ? (
-                                5, localTile.x, localTile.y - 1, defaultUV
+                                5, localGrid.x, localGrid.y - 1, defaultUV
                             ) : (
-                                3, -1 - localTile.x, 0,
-                                new double2(1 - localUV.x, TileSpan - localUV.y)
+                                3, -1 - localGrid.x, 0,
+                                new double2(1 - localUV.x, GridSpan - localUV.y)
                             );
                     default:
                         return (0, 0, 0, double2.zero);
@@ -471,15 +471,15 @@ namespace SgtExtensions {
                         (int, double2) t = pointToCubeQuadIdAndUV(point);
                         int quadIdx = t.Item1;
                         double2 localUV = t.Item2;
-                        localUV *= TilesPerDim;
-                        int2 localTile = new int2(math.floor(localUV));
+                        localUV *= GridsPerDim;
+                        int2 localGrid = new int2(math.floor(localUV));
 
-                        localUV = math.frac(localUV) * (1 - TileSpan) + TileSpan * .5f;
+                        localUV = math.frac(localUV) * (1 - GridSpan) + GridSpan * .5f;
 
-                        int tilesPerQuad = TilesPerDim * TilesPerDim;
+                        int gridsPerQuad = GridsPerDim * GridsPerDim;
 
-                        // tileId, localUV
-                        double alpha_K = 1 / TileSpan;
+                        // gridId, localUV
+                        double alpha_K = 1 / GridSpan;
                         double2 alphaUV = math.smoothstep(0, 1, math.saturate(alpha_K * localUV));
                         double2 alphaUVMinus = math.smoothstep(0, 1, math.saturate(alpha_K * (1 - localUV)));
 
@@ -494,93 +494,93 @@ namespace SgtExtensions {
 
                         double localHeight =
                             GetSubHeight(
-                                selfAlpha, (quadIdx, localTile.x, localTile.y, localUV));
+                                selfAlpha, (quadIdx, localGrid.x, localGrid.y, localUV));
 
                         if (leftAlpha > 0) {
-                            var leftNeighbourTileIdAndUV =
-                                LeftNeighbourTileIdAndUV(quadIdx, localTile, localUV);
+                            var leftNeighbourGridIdAndUV =
+                                LeftNeighbourGridIdAndUV(quadIdx, localGrid, localUV);
                             if (upAlpha > 0) { // up-left corner
                                 localHeight += GetSubHeight(
                                     leftAlpha * (1 - upAlpha),
-                                    leftNeighbourTileIdAndUV);
+                                    leftNeighbourGridIdAndUV);
 
                                 localHeight += GetSubHeight(
                                     (1 - leftAlpha) * upAlpha,
-                                    UpNeighbourTileIdAndUV(quadIdx, localTile, localUV));
+                                    UpNeighbourGridIdAndUV(quadIdx, localGrid, localUV));
 
                                 localHeight += GetSubHeight(
                                     leftAlpha * upAlpha,
-                                    UpNeighbourTileIdAndUV(
-                                        leftNeighbourTileIdAndUV.Item1,
-                                        new int2(leftNeighbourTileIdAndUV.Item2, leftNeighbourTileIdAndUV.Item3),
-                                        leftNeighbourTileIdAndUV.Item4));
+                                    UpNeighbourGridIdAndUV(
+                                        leftNeighbourGridIdAndUV.Item1,
+                                        new int2(leftNeighbourGridIdAndUV.Item2, leftNeighbourGridIdAndUV.Item3),
+                                        leftNeighbourGridIdAndUV.Item4));
                             } else if (downAlpha > 0) { // down-left corner
                                 localHeight += GetSubHeight(
                                     leftAlpha * (1 - downAlpha),
-                                    leftNeighbourTileIdAndUV);
+                                    leftNeighbourGridIdAndUV);
 
                                 localHeight += GetSubHeight(
                                     (1 - leftAlpha) * downAlpha,
-                                    DownNeighbourTileIdAndUV(quadIdx, localTile, localUV));
+                                    DownNeighbourGridIdAndUV(quadIdx, localGrid, localUV));
 
                                 localHeight += GetSubHeight(
                                     leftAlpha * downAlpha,
-                                    DownNeighbourTileIdAndUV(
-                                        leftNeighbourTileIdAndUV.Item1,
-                                        new int2(leftNeighbourTileIdAndUV.Item2, leftNeighbourTileIdAndUV.Item3),
-                                        leftNeighbourTileIdAndUV.Item4));
+                                    DownNeighbourGridIdAndUV(
+                                        leftNeighbourGridIdAndUV.Item1,
+                                        new int2(leftNeighbourGridIdAndUV.Item2, leftNeighbourGridIdAndUV.Item3),
+                                        leftNeighbourGridIdAndUV.Item4));
 
                             } else {
                                 localHeight += GetSubHeight(
-                                    leftAlpha, leftNeighbourTileIdAndUV);
+                                    leftAlpha, leftNeighbourGridIdAndUV);
                             }
                         } else if (rightAlpha > 0) {
-                            var rightNeighbourTileIdAndUV =
-                                RightNeighbourTileIdAndUV(quadIdx, localTile, localUV);
+                            var rightNeighbourGridIdAndUV =
+                                RightNeighbourGridIdAndUV(quadIdx, localGrid, localUV);
                             if (upAlpha > 0) { // up-left corner
                                 localHeight += GetSubHeight(
                                     rightAlpha * (1 - upAlpha),
-                                    rightNeighbourTileIdAndUV);
+                                    rightNeighbourGridIdAndUV);
 
                                 localHeight += GetSubHeight(
                                     (1 - rightAlpha) * upAlpha,
-                                    UpNeighbourTileIdAndUV(quadIdx, localTile, localUV));
+                                    UpNeighbourGridIdAndUV(quadIdx, localGrid, localUV));
 
                                 localHeight += GetSubHeight(
                                     rightAlpha * upAlpha,
-                                    UpNeighbourTileIdAndUV(
-                                        rightNeighbourTileIdAndUV.Item1,
-                                        new int2(rightNeighbourTileIdAndUV.Item2, rightNeighbourTileIdAndUV.Item3),
-                                        rightNeighbourTileIdAndUV.Item4));
+                                    UpNeighbourGridIdAndUV(
+                                        rightNeighbourGridIdAndUV.Item1,
+                                        new int2(rightNeighbourGridIdAndUV.Item2, rightNeighbourGridIdAndUV.Item3),
+                                        rightNeighbourGridIdAndUV.Item4));
 
                             } else if (downAlpha > 0) { // down-left corner
                                 localHeight += GetSubHeight(
                                     rightAlpha * (1 - downAlpha),
-                                    rightNeighbourTileIdAndUV);
+                                    rightNeighbourGridIdAndUV);
 
                                 localHeight += GetSubHeight(
                                     (1 - rightAlpha) * downAlpha,
-                                    DownNeighbourTileIdAndUV(quadIdx, localTile, localUV));
+                                    DownNeighbourGridIdAndUV(quadIdx, localGrid, localUV));
 
                                 localHeight += GetSubHeight(
                                     rightAlpha * downAlpha,
-                                    DownNeighbourTileIdAndUV(
-                                        rightNeighbourTileIdAndUV.Item1,
-                                        new int2(rightNeighbourTileIdAndUV.Item2, rightNeighbourTileIdAndUV.Item3),
-                                        rightNeighbourTileIdAndUV.Item4));
+                                    DownNeighbourGridIdAndUV(
+                                        rightNeighbourGridIdAndUV.Item1,
+                                        new int2(rightNeighbourGridIdAndUV.Item2, rightNeighbourGridIdAndUV.Item3),
+                                        rightNeighbourGridIdAndUV.Item4));
 
                             } else {
                                 localHeight += GetSubHeight(
-                                    rightAlpha, rightNeighbourTileIdAndUV);
+                                    rightAlpha, rightNeighbourGridIdAndUV);
                             }
                         } else if (upAlpha > 0) {
                             localHeight += GetSubHeight(
                                 upAlpha,
-                                UpNeighbourTileIdAndUV(quadIdx, localTile, localUV));
+                                UpNeighbourGridIdAndUV(quadIdx, localGrid, localUV));
                         } else if (downAlpha > 0) {
                             localHeight += GetSubHeight(
                                 downAlpha,
-                                DownNeighbourTileIdAndUV(quadIdx, localTile, localUV));
+                                DownNeighbourGridIdAndUV(quadIdx, localGrid, localUV));
                         }
                         Heights[i] += localHeight * weight;
                     }
@@ -616,16 +616,16 @@ namespace SgtExtensions {
             Draw("displacement", ref markAsDirty, "The random seed of distributing the stamps");
             Draw("heightOrigin", ref markAsDirty, "The origin point of the displacement with respect to the pixel value");
 
-            BeginError(Any(tgts, t => t.TilesPerDim == 0));
-            Draw("tilesPerDim", ref markAsDirty, "Number of the tiles per dimension on each cube face");
+            BeginError(Any(tgts, t => t.GridsPerDim == 0));
+            Draw("gridsPerDim", ref markAsDirty, "Number of the grids per dimension on each cube face");
             EndError();
 
-            BeginError(Any(tgts, t => t.TileSpan < 0 || t.TileSpan > 1));
-            Draw("tileSpan", ref markAsDirty, "The span of each tile for the lerp");
+            BeginError(Any(tgts, t => t.GridSpan < 0 || t.GridSpan > 1));
+            Draw("gridSpan", ref markAsDirty, "The span of each grid for the lerp");
             EndError();
 
             BeginError(Any(tgts, t => t.HeightStamps.Length == 0));
-            Draw("heightStamps", ref prepareTextures, "Number of the tiles per dimension on each cube face");
+            Draw("heightStamps", ref prepareTextures, "Number of the grids per dimension on each cube face");
             EndError();
 
             if (prepareTextures == true) {
