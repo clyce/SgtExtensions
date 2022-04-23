@@ -10,6 +10,16 @@ Current published:
 
 ## Features
 
+### SgteTerrainHeightsStamps
+
+A scriptable object that specifies a group of height maps (called stamps). Each having the below configuration:
+
+- StampMap: the height map for the stamp
+- LocalHeightOrigin: the local height origin of this specific stamp, when generating heights, the texture is treated as $[-LocalHeightOrigin, 1 - LocalHeightOrigin]$, which is meant to configured such that when the textures are blended with others, they can be approximately at the same base level. This property can be set to values in range $[0, 1]$. There are buttons for auto inference of local origins regarding the min/average/max height in the inspector.
+- LocalDisplacement: the local displacement, With range $[-1, 1]$
+
+**Currently only single-channeled stamps on alpha channel, with unified size are supported**
+
 ### SgteTerrainHeightStampGrid
 
 This is an asset that distributes a set of pre-defined height-maps (called height stamp) onto `SgtTerrainPlanet` with respect to a set of grids.
@@ -23,10 +33,8 @@ When generating the planet, each vertex point on the terrain is mapped onto a qu
 - HeightOrigin: the global "origin point" of the height value, for example, `HeightOrigin = 0.5f` makes the black region to alter the height with `-0.5f * Displacement`
 - GridsPerDim: Number of grids along each x,y dimension on each quad of the unit cube.
 - GridSpan: when the localUV is normalized to $[0,1]$, for each grid, how much does each grid overlaps and blends with it's neighbours.
-- HeightStamps: An array of heightmaps and their corresponding configurations:
-	- StampMap: the height map for the stamp
-	- LocalHeightOrigin: the local height origin of this specific stamp, being added to the global `HeightOrigin`. With range $[0, 1]$
-	- LocalDisplacement: the local displacement with respect to the global `Displacement`, the final displacement of this specific stamp will be `LocalDisplacement * Displacement`. With range $[-1, 1]$
+- HeightStamps: The `SgteTerrainHeightStamps` for distributing the height stamps
+- HeightStampCount: Specifies the number of height stamps inside `SgteTerrainHeightStamps` to be used. Restricted to be smaller than the actual size of the `SgteTerrainHeightStamps`, higher value leads to lower probability of generating repetitive pattern, but consumes more memory.
 
 #### Demonstration:
 
@@ -51,6 +59,7 @@ When generating the planet, each vertex point on the terrain is mapped onto a qu
 - Normal-fade of the height stamps with respect to a global height-map, to mimic the terrain gravitational erosion
 - Use spherical angular coordinates for mapping grids such that the size of the grids can be evenly distributed
 - Can global/local displacement and heightOrigins to be a distribution rather than a constant configuration?
+- UV distortion support
 
 ### WIP Features
 

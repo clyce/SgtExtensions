@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using CW.Common;
 using SpaceGraphicsToolkit;
 using Unity.Burst;
@@ -15,7 +16,7 @@ namespace SgtExtensions {
     [ExecuteInEditMode]
     [RequireComponent(typeof(SgtTerrain))]
     public class SgteTerrainHeightStampGrid : MonoBehaviour {
-        public uint Seed { set { if (seed != value) { seed = value; MarkAsDirty(); } } get { return seed; } }
+        public uint Seed { set { if (seed != value) { seed = value; RefreshHeightStampsCache(); } } get { return seed; } }
         [SerializeField] private uint seed;
         public int GridsPerDim { set { if (gridsPerDim != value) { gridsPerDim = value; MarkAsDirty(); } } get { return gridsPerDim; } }
         [SerializeField] private int gridsPerDim = 1;
@@ -27,17 +28,10 @@ namespace SgtExtensions {
         [SerializeField] private double displacement = 0.25;
         public double HeightOrigin { set { if (heightOrigin != value) { heightOrigin = value; MarkAsDirty(); } } get { return heightOrigin; } }
         [SerializeField] private double heightOrigin = 0.5;
-
-        // currently support only single-channel
-        [Serializable]
-        public class HeightStampCfg {
-            public Texture2D stampMap;
-            [Range(0, 1)] public double localHeightOrigin = .5f;
-            [Range(-1, 1)] public double localDisplacement = 1f;
-        }
-
-        public HeightStampCfg[] HeightStamps { set { if (heightStamps != value) { heightStamps = value; PrepareTextures(); } } get { return heightStamps; } }
-        [SerializeField] private HeightStampCfg[] heightStamps;
+        public SgteTerrainHeightStamps HeightStamps { set { if (heightStamps != value) { heightStamps = value; RefreshHeightStampsCache(); } } get { return heightStamps; } }
+        [SerializeField] private SgteTerrainHeightStamps heightStamps;
+        public int HeightStampCount {set {if (heightStampCount != value) { heightStampCount = value; RefreshHeightStampsCache(); }} get { return heightStampCount; } }
+        [SerializeField] private int heightStampCount = 8;
         private SgtTerrain cachedTerrain;
         private NativeArray<byte> cachedHeightStampData = new NativeArray<byte>();
         private NativeArray<float> tempWeights;
@@ -45,17 +39,20 @@ namespace SgtExtensions {
         private NativeArray<bool3> gridFlipAndTranspose = new NativeArray<bool3>();
         private NativeArray<double> localHeightOrigins = new NativeArray<double>();
         private NativeArray<double> localDisplacements = new NativeArray<double>();
-        private int stampCount => heightStamps.Length;
-        public void MarkAsDirty() {
-            if (heightStamps.Length > 0) {
+        private Unity.Mathematics.Random rand;
+        public void MarkAsDirty(bool initRand=true) {
+
+            if (initRand)
+                rand = Unity.Mathematics.Random.CreateFromIndex(Seed);
+
+            if (HeightStampCount > 0) {
                 try { gridMappings.Dispose(); } catch { };
                 try { gridFlipAndTranspose.Dispose(); } catch { }
                 int totalGrids = GridsPerDim * GridsPerDim * 6;
                 gridMappings = new NativeArray<int>(totalGrids, Allocator.Persistent);
                 gridFlipAndTranspose = new NativeArray<bool3>(totalGrids, Allocator.Persistent);
-                var rand = Unity.Mathematics.Random.CreateFromIndex(Seed);
                 for (int i = 0; i < gridMappings.Length; i++) {
-                    gridMappings[i] = rand.NextInt(0, heightStamps.Length);
+                    gridMappings[i] = rand.NextInt(0, HeightStampCount);
                     gridFlipAndTranspose[i] = rand.NextBool3();
                 }
             }
@@ -64,20 +61,31 @@ namespace SgtExtensions {
             }
         }
 
-        public void PrepareTextures() {
-            try { cachedHeightStampData.Dispose(); } catch { }
-            try { localHeightOrigins.Dispose(); } catch { }
-            try { localDisplacements.Dispose(); } catch { }
-            NativeList<byte> heightStampDataList = new NativeList<byte>(Allocator.Persistent);
-            localHeightOrigins = new NativeArray<double>(heightStamps.Length, Allocator.Persistent);
-            localDisplacements = new NativeArray<double>(heightStamps.Length, Allocator.Persistent);
-            for (int i = 0; i < heightStamps.Length; i++) {
-                heightStampDataList.AddRange(heightStamps[i].stampMap.GetRawTextureData<byte>());
-                localHeightOrigins[i] = heightStamps[i].localHeightOrigin;
-                localDisplacements[i] = heightStamps[i].localDisplacement;
+        public void RefreshHeightStampsCache() {
+            if (HeightStamps != null) {
+                try { cachedHeightStampData.Dispose(); } catch { }
+                try { localHeightOrigins.Dispose(); } catch { }
+                try { localDisplacements.Dispose(); } catch { }
+                NativeList<byte> heightStampDataList = new NativeList<byte>(Allocator.Persistent);
+                localHeightOrigins = new NativeArray<double>(HeightStampCount, Allocator.Persistent);
+                localDisplacements = new NativeArray<double>(HeightStampCount, Allocator.Persistent);
+                rand = Unity.Mathematics.Random.CreateFromIndex(Seed);
+
+                if (HeightStampCount > HeightStamps.heightStampConfigs.Count) {
+                    // using the private heightStampCount since we don't want to trigger the refreshing again
+                    heightStampCount = HeightStamps.heightStampConfigs.Count;
+                }
+                var selectedHeightStamps = HeightStamps.heightStampConfigs.OrderBy(_ => rand.NextInt()).Take(heightStampCount).ToArray();
+                for (int i = 0; i < HeightStampCount; i++) {
+                    heightStampDataList.AddRange(selectedHeightStamps[i].stampMap.GetRawTextureData<byte>());
+                    localHeightOrigins[i] = selectedHeightStamps[i].localHeightOrigin;
+                    localDisplacements[i] = selectedHeightStamps[i].localDisplacement;
+                }
+                cachedHeightStampData = heightStampDataList.AsArray();
+                MarkAsDirty(initRand: false);
+            } else {
+                heightStampCount = 0;
             }
-            cachedHeightStampData = heightStampDataList.AsArray();
-            MarkAsDirty();
         }
 
         protected virtual void OnEnable() {
@@ -87,7 +95,7 @@ namespace SgtExtensions {
             cachedTerrain.OnScheduleCombinedHeights += HandleScheduleHeights;
 
             tempWeights = new NativeArray<float>(0, Allocator.Persistent);
-            PrepareTextures();
+            RefreshHeightStampsCache();
         }
 
         protected virtual void OnDisable() {
@@ -138,13 +146,12 @@ namespace SgtExtensions {
 
         // id, left, right, up, down
         private void HandleScheduleHeights(NativeArray<double3> points, NativeArray<double> heights, ref JobHandle handle) {
-            if (heightStamps.Length <= 0) return;
+            if (HeightStampCount <= 0) return;
             var job = new HeightsJob();
-            job.Displacement = 1000;
             job.Seed = Seed;
             job.Displacement = Displacement;
             job.HeightOrigin = HeightOrigin;
-            var sampleTex = heightStamps[0].stampMap;
+            var sampleTex = heightStamps.heightStampConfigs[0].stampMap;
             job.StampSize = new int2(sampleTex.width, sampleTex.height);
             job.StampStride = SgtCommon.GetStride(sampleTex.format);
             job.StampOffset = SgtCommon.GetOffset(sampleTex.format, 0);
@@ -153,8 +160,8 @@ namespace SgtExtensions {
             job.GridSpan = GridSpan;
             job.GridMapping = gridMappings;
             job.GridFlipAndTranspose = gridFlipAndTranspose;
-            job.StampCount = stampCount;
-            job.StampBSize = cachedHeightStampData.Length / stampCount;
+            job.StampCount = HeightStampCount;
+            job.StampBSize = cachedHeightStampData.Length / HeightStampCount;
             job.LocalDisplacements = localDisplacements;
             job.LocalHeightOrigins = localHeightOrigins;
             job.Points = points;
@@ -601,7 +608,7 @@ namespace SgtExtensions {
 
     [CanEditMultipleObjects]
     [CustomEditor(typeof(SgteTerrainHeightStampGrid))]
-    public class PlanetTerrainStamps_Editor : CwEditor {
+    public class SgteTerrainHeightStampGrid_Editor : CwEditor {
         protected override void OnInspector() {
             TARGET tgt; TARGET[] tgts; GetTargets(out tgt, out tgts);
 
@@ -624,12 +631,22 @@ namespace SgtExtensions {
             Draw("gridSpan", ref markAsDirty, "The span of each grid for the lerp");
             EndError();
 
-            BeginError(Any(tgts, t => t.HeightStamps.Length == 0));
-            Draw("heightStamps", ref prepareTextures, "Number of the grids per dimension on each cube face");
+            BeginError(Any(tgts, t => t.HeightStamps == null));
+            Draw("heightStamps", ref prepareTextures, "The height stamps library used for this drawing stamps from");
             EndError();
 
+            BeginError(Any(tgts, t => t.HeightStampCount <= 0));
+            Draw("heightStampCount", ref prepareTextures, "Number of stamps to drawn from the HeightStamps scriptable obejct, a big number decreases the reptitiveness of the planet terrain but consumes more memory");
+            EndError();
+
+            // Manual refresh, e.g: when the HeightStamp scriptable object is updated....
+            if (Button("Force Refresh Height Stamps")) {
+                tgt.RefreshHeightStampsCache();
+                DirtyAndUpdate();
+            }
+
             if (prepareTextures == true) {
-                Each(tgts, t => t.PrepareTextures(), true, true);
+                Each(tgts, t => t.RefreshHeightStampsCache(), true, true);
             }
 
             if (markAsDirty == true) {
